@@ -21,6 +21,7 @@ const twilioWss = new WebSocketServer({ noServer: true });
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true })); // For Twilio's x-www-form-urlencoded status updates
 
 let frontendSockets = [];
 
@@ -47,7 +48,10 @@ app.post('/call', async (req, res) => {
       url: `https://${req.headers.host}/twiml`,
       to,
       from: process.env.TWILIO_NUMBER,
-      method: 'POST'
+      method: 'POST',
+      statusCallback: `https://${req.headers.host}/status`,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+      statusCallbackMethod: 'POST'
     });
     console.log(`📞 Outgoing call initiated to ${to}`);
     res.json({ success: true, sid: call.sid });
@@ -74,6 +78,30 @@ app.post('/twiml', (req, res) => {
 
   res.type('text/xml');
   res.send(response.toString());
+});
+
+// Call status tracking endpoint
+app.post('/status', (req, res) => {
+  const { CallSid, CallStatus, From, To } = req.body;
+
+  console.log('📟 Call Status Event Received');
+  console.log(`➡️ Call SID: ${CallSid}`);
+  console.log(`➡️ From: ${From}, To: ${To}`);
+  console.log(`➡️ Status: ${CallStatus}`);
+
+  frontendSockets.forEach(sock => {
+    if (sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({
+        type: 'status',
+        status: CallStatus,
+        sid: CallSid,
+        from: From,
+        to: To
+      }));
+    }
+  });
+
+  res.sendStatus(200);
 });
 
 // WebSocket upgrade routing with WeakSet tracking
@@ -133,7 +161,7 @@ twilioWss.on('connection', (twilioSocket) => {
           console.log('📝 Transcript:', parsed.transcript.text);
           frontendSockets.forEach(sock => {
             if (sock.readyState === WebSocket.OPEN) {
-              sock.send(JSON.stringify({ text: parsed.transcript.text }));
+              sock.send(JSON.stringify({ type: 'transcript', text: parsed.transcript.text }));
               console.log('📤 Sent transcript to frontend');
             }
           });
