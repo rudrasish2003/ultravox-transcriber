@@ -1,19 +1,22 @@
 // server.js
-const express = require('express');
-const http = require('http');
-const cors = require('cors');
-const path = require('path');
-const WebSocket = require('ws');
-const twilio = require('twilio');
-const dotenv = require('dotenv');
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import path from 'path';
+import WebSocket, { WebSocketServer } from 'ws';
+import twilio from 'twilio';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-const twilioWss = new WebSocket.Server({ noServer: true });
-
-const __dirname = path.resolve();
+const wss = new WebSocketServer({ server });
+const twilioWss = new WebSocketServer({ noServer: true });
 
 app.use(cors());
 app.use(express.json());
