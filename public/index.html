@@ -30,6 +30,10 @@
     }
     .controls {
       margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
     }
     .controls button {
       padding: 0.5rem 1rem;
@@ -43,18 +47,27 @@
     .controls button:hover {
       background-color: #0056b3;
     }
+    input[type="tel"] {
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      width: 200px;
+    }
   </style>
 </head>
 <body>
 
   <h2>📞 Ultravox Live Transcription</h2>
 
-  <div id="transcript">Waiting for audio...</div>
-  <div class="status" id="status">🔌 Connecting to WebSocket...</div>
-
   <div class="controls">
+    <input type="tel" id="phoneNumber" placeholder="+91XXXXXXXXXX" />
+    <button onclick="makeCall()">📲 Call</button>
     <button onclick="clearTranscript()">🧹 Clear Transcript</button>
   </div>
+
+  <div id="transcript">Waiting for audio...</div>
+  <div class="status" id="status">🔌 Connecting to WebSocket...</div>
 
   <script>
     const transcriptEl = document.getElementById('transcript');
@@ -62,6 +75,32 @@
 
     function clearTranscript() {
       transcriptEl.innerText = '';
+    }
+
+    function makeCall() {
+      const number = document.getElementById('phoneNumber').value;
+      if (!number.startsWith('+')) {
+        alert('Please enter a valid E.164 formatted number (e.g., +918XXXXXXXXX)');
+        return;
+      }
+
+      fetch('/call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: number })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            statusEl.innerText = `📞 Call initiated: ${data.sid}`;
+          } else {
+            statusEl.innerText = `❌ Call failed: ${data.error}`;
+          }
+        })
+        .catch(err => {
+          console.error('Call error:', err);
+          statusEl.innerText = '❌ Call error. Check console.';
+        });
     }
 
     const ws = new WebSocket(`wss://${location.host}/frontend`);
