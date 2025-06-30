@@ -68,6 +68,9 @@ app.post('/twiml', (req, res) => {
 
   response.say('This is a test call. Speak after the beep.');
 
+  // 🔥 Keep call alive for 60 seconds
+  response.pause({ length: 60 });
+
   res.type('text/xml');
   res.send(response.toString());
 });
