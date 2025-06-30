@@ -1,32 +1,68 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Live Transcript</title>
+  <meta charset="UTF-8">
+  <title>Ultravox Live Transcript</title>
   <style>
-    body { font-family: sans-serif; padding: 2rem; background-color: #fdfdfd; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f5f7fa;
+      padding: 2rem;
+      color: #222;
+    }
+    h2 {
+      margin-bottom: 1rem;
+    }
     #transcript {
       border: 1px solid #ccc;
       padding: 1rem;
-      height: 250px;
+      height: 300px;
       overflow-y: auto;
-      background: #f1f1f1;
+      background: #f0f0f0;
       white-space: pre-wrap;
+      font-size: 1rem;
+      line-height: 1.5;
     }
     .status {
-      font-size: 0.9rem;
-      color: #444;
       margin-top: 1rem;
+      font-size: 0.95rem;
+      color: #444;
+    }
+    .controls {
+      margin-top: 1rem;
+    }
+    .controls button {
+      padding: 0.5rem 1rem;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .controls button:hover {
+      background-color: #0056b3;
     }
   </style>
 </head>
 <body>
-  <h2>📞 Ultravox Realtime Transcription</h2>
-  <div id="transcript">Waiting...</div>
-  <div class="status" id="status">🔌 Connecting...</div>
+
+  <h2>📞 Ultravox Live Transcription</h2>
+
+  <div id="transcript">Waiting for audio...</div>
+  <div class="status" id="status">🔌 Connecting to WebSocket...</div>
+
+  <div class="controls">
+    <button onclick="clearTranscript()">🧹 Clear Transcript</button>
+  </div>
 
   <script>
     const transcriptEl = document.getElementById('transcript');
     const statusEl = document.getElementById('status');
+
+    function clearTranscript() {
+      transcriptEl.innerText = '';
+    }
 
     const ws = new WebSocket(`wss://${location.host}/frontend`);
 
@@ -36,26 +72,30 @@
 
     ws.onerror = (err) => {
       console.error('WebSocket error:', err);
-      statusEl.innerText = '❌ WebSocket error. Check console.';
+      statusEl.innerText = '❌ WebSocket error. See console.';
     };
 
     ws.onclose = () => {
-      statusEl.innerText = '🔌 Disconnected from WebSocket';
+      statusEl.innerText = '🔌 WebSocket disconnected';
     };
 
     ws.onmessage = ({ data }) => {
       try {
         const parsed = JSON.parse(data);
         if (parsed.type === 'transcript' && parsed.text) {
+          if (transcriptEl.innerText === 'Waiting for audio...') {
+            transcriptEl.innerText = '';
+          }
           transcriptEl.innerText += ' ' + parsed.text;
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
         } else if (parsed.type === 'status') {
           statusEl.innerText = `📞 Call status: ${parsed.status}`;
         }
-      } catch (e) {
-        console.error('Invalid message:', data);
+      } catch (err) {
+        console.error('Invalid message received:', data);
       }
     };
   </script>
+
 </body>
 </html>

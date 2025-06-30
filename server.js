@@ -34,7 +34,7 @@ app.get('/', (_, res) => {
 
 // Frontend WebSocket logic
 wss.on('connection', (socket) => {
-  console.log('✅ Frontend connected');
+  console.log(' Frontend connected');
   frontendSockets.push(socket);
   socket.on('close', () => {
     frontendSockets = frontendSockets.filter(s => s !== socket);
@@ -55,10 +55,10 @@ app.post('/call', async (req, res) => {
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'
     });
-    console.log(`📞 Outgoing call initiated to ${to}`);
+    console.log(` Outgoing call initiated to ${to}`);
     res.json({ success: true, sid: call.sid });
   } catch (error) {
-    console.error('❌ Call error:', error);
+    console.error(' Call error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -115,7 +115,7 @@ server.on('upgrade', (req, socket, head) => {
     });
   } else if (pathname === '/frontend') {
     console.log('🔌 WebSocket upgrade for /frontend');
-    wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.handleUpgrade(req, socket, head, (ws) => {   
       wss.emit('connection', ws, req);
     });
   } else {
