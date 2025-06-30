@@ -7,8 +7,7 @@ import { WebSocketServer } from 'ws';
 import twilio from 'twilio';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import Ultravox from 'ultravox-client';
-;
+import * as Ultravox from 'ultravox-client'; // ✅ Fix here
 
 dotenv.config();
 
@@ -28,12 +27,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let frontendSockets = [];
 
-// Serve frontend page
 app.get('/', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Frontend WebSocket connection
 wss.on('connection', (socket) => {
   console.log('✅ Frontend WebSocket connected');
   frontendSockets.push(socket);
@@ -42,8 +39,8 @@ wss.on('connection', (socket) => {
   });
 });
 
-// Twilio call API
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
+
 app.post('/call', async (req, res) => {
   const { to } = req.body;
   try {
@@ -64,7 +61,6 @@ app.post('/call', async (req, res) => {
   }
 });
 
-// Dynamic TwiML with <Stream>
 app.post('/twiml', (req, res) => {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const response = new VoiceResponse();
@@ -81,7 +77,6 @@ app.post('/twiml', (req, res) => {
   res.send(response.toString());
 });
 
-// Status Webhook
 app.post('/status', (req, res) => {
   const { CallSid, CallStatus, From, To } = req.body;
   console.log('📶 Call Status Webhook Hit');
@@ -108,7 +103,6 @@ app.post('/status', (req, res) => {
   res.sendStatus(200);
 });
 
-// Handle WebSocket upgrades
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url;
 
@@ -127,7 +121,6 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-// Twilio <Stream> socket + Ultravox SDK
 twilioWss.on('connection', (twilioSocket) => {
   console.log('🔁 Twilio WebSocket connected');
 
