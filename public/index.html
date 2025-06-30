@@ -3,21 +3,58 @@
 <head>
   <title>Live Transcript</title>
   <style>
-    body { font-family: sans-serif; padding: 2rem; }
-    #transcript { border: 1px solid #ccc; padding: 1rem; height: 200px; overflow-y: auto; background: #f1f1f1; }
+    body { font-family: sans-serif; padding: 2rem; background-color: #fdfdfd; }
+    #transcript {
+      border: 1px solid #ccc;
+      padding: 1rem;
+      height: 250px;
+      overflow-y: auto;
+      background: #f1f1f1;
+      white-space: pre-wrap;
+    }
+    .status {
+      font-size: 0.9rem;
+      color: #444;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
   <h2>📞 Ultravox Realtime Transcription</h2>
   <div id="transcript">Waiting...</div>
+  <div class="status" id="status">🔌 Connecting...</div>
 
   <script>
-    const ws = new WebSocket(`wss://${location.host}`);
+    const transcriptEl = document.getElementById('transcript');
+    const statusEl = document.getElementById('status');
+
+    const ws = new WebSocket(`wss://${location.host}/frontend`);
+
+    ws.onopen = () => {
+      statusEl.innerText = '✅ Connected to WebSocket';
+    };
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      statusEl.innerText = '❌ WebSocket error. Check console.';
+    };
+
+    ws.onclose = () => {
+      statusEl.innerText = '🔌 Disconnected from WebSocket';
+    };
+
     ws.onmessage = ({ data }) => {
-      const { text } = JSON.parse(data);
-      const transcriptEl = document.getElementById('transcript');
-      transcriptEl.innerText += ' ' + text;
-      transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.type === 'transcript' && parsed.text) {
+          transcriptEl.innerText += ' ' + parsed.text;
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+        } else if (parsed.type === 'status') {
+          statusEl.innerText = `📞 Call status: ${parsed.status}`;
+        }
+      } catch (e) {
+        console.error('Invalid message:', data);
+      }
     };
   </script>
 </body>
