@@ -1,21 +1,19 @@
 // server.js
-import express from 'express';
-import { WebSocketServer } from 'ws';
-import http from 'http';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import twilio from 'twilio';
-import dotenv from 'dotenv';
+const express = require('express');
+const http = require('http');
+const cors = require('cors');
+const path = require('path');
+const WebSocket = require('ws');
+const twilio = require('twilio');
+const dotenv = require('dotenv');
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
-const twilioWss = new WebSocketServer({ noServer: true });
+const wss = new WebSocket.Server({ server });
+const twilioWss = new WebSocket.Server({ noServer: true });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.resolve();
 
 app.use(cors());
 app.use(express.json());
@@ -82,7 +80,6 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 // Twilio <Stream> handler
-import WebSocket from 'ws';
 twilioWss.on('connection', (twilioSocket) => {
   console.log('📞 Twilio connected');
 
