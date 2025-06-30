@@ -7,7 +7,8 @@ import { WebSocketServer } from 'ws';
 import twilio from 'twilio';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import Ultravox from '@ultravox/sdk';
+import Ultravox from 'ultravox-client';
+;
 
 dotenv.config();
 
