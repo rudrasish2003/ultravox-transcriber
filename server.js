@@ -76,11 +76,18 @@ app.post('/twiml', (req, res) => {
   res.send(response.toString());
 });
 
-// WebSocket upgrade routing
+// WebSocket upgrade routing with socket guard
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url;
   if (pathname === '/twilio') {
+    if (socket.upgraded) {
+      console.warn('⚠️ Duplicate upgrade attempt blocked');
+      socket.destroy();
+      return;
+    }
+
     console.log('🔄 WebSocket upgrade for /twilio');
+    socket.upgraded = true;
     twilioWss.handleUpgrade(req, socket, head, (ws) => {
       twilioWss.emit('connection', ws, req);
     });
