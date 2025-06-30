@@ -12,10 +12,12 @@
   <div id="transcript">Waiting...</div>
 
   <script>
-    const ws = new WebSocket(`ws://${location.host}`);
+    const ws = new WebSocket(`wss://${location.host}`);
     ws.onmessage = ({ data }) => {
       const { text } = JSON.parse(data);
-      document.getElementById('transcript').innerText += ' ' + text;
+      const transcriptEl = document.getElementById('transcript');
+      transcriptEl.innerText += ' ' + text;
+      transcriptEl.scrollTop = transcriptEl.scrollHeight;
     };
   </script>
 </body>
