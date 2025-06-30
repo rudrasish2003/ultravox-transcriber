@@ -49,9 +49,10 @@ app.post('/call', async (req, res) => {
       from: process.env.TWILIO_NUMBER,
       method: 'POST'
     });
+    console.log(`📞 Outgoing call initiated to ${to}`);
     res.json({ success: true, sid: call.sid });
   } catch (error) {
-    console.error('Call error:', error);
+    console.error('❌ Call error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -67,9 +68,9 @@ app.post('/twiml', (req, res) => {
   });
 
   response.say('This is a test call. Speak after the beep.');
-
-  // 🔥 Keep call alive for 60 seconds
   response.pause({ length: 60 });
+
+  console.log('🧾 TwiML returned with streaming and pause');
 
   res.type('text/xml');
   res.send(response.toString());
@@ -79,6 +80,7 @@ app.post('/twiml', (req, res) => {
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url;
   if (pathname === '/twilio') {
+    console.log('🔄 WebSocket upgrade for /twilio');
     twilioWss.handleUpgrade(req, socket, head, (ws) => {
       twilioWss.emit('connection', ws, req);
     });
@@ -96,23 +98,37 @@ twilioWss.on('connection', (twilioSocket) => {
   });
 
   uv.on('open', () => {
+    console.log('🔗 Ultravox WebSocket opened');
+
     twilioSocket.on('message', (msg) => {
-      const json = JSON.parse(msg);
-      if (json.event === 'media') {
-        const audio = Buffer.from(json.media.payload, 'base64');
-        uv.send(audio);
+      console.log('[🎧 Incoming Twilio Msg]', msg);
+      try {
+        const json = JSON.parse(msg);
+        if (json.event === 'media') {
+          const audio = Buffer.from(json.media.payload, 'base64');
+          uv.send(audio);
+          console.log('🔊 Sent audio to Ultravox');
+        }
+      } catch (err) {
+        console.error('❌ Error parsing Twilio msg:', err);
       }
     });
 
     uv.on('message', (data) => {
-      const parsed = JSON.parse(data);
-      if (parsed.type === 'transcript' && parsed.transcript?.text) {
-        console.log('📝', parsed.transcript.text);
-        frontendSockets.forEach(sock => {
-          if (sock.readyState === WebSocket.OPEN) {
-            sock.send(JSON.stringify({ text: parsed.transcript.text }));
-          }
-        });
+      console.log('[🧠 Ultravox Msg]', data);
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.type === 'transcript' && parsed.transcript?.text) {
+          console.log('📝 Transcript:', parsed.transcript.text);
+          frontendSockets.forEach(sock => {
+            if (sock.readyState === WebSocket.OPEN) {
+              sock.send(JSON.stringify({ text: parsed.transcript.text }));
+              console.log('📤 Sent transcript to frontend');
+            }
+          });
+        }
+      } catch (err) {
+        console.error('❌ Error parsing Ultravox msg:', err);
       }
     });
   });
