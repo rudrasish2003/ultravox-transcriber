@@ -53,10 +53,10 @@ app.post('/call', async (req, res) => {
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       statusCallbackMethod: 'POST'
     });
-    console.log(`📞 Outgoing call initiated to ${to}`);
+    console.log(` Outgoing call initiated to ${to}`);
     res.json({ success: true, sid: call.sid });
   } catch (error) {
-    console.error('❌ Call error:', error);
+    console.error(' Call error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -84,10 +84,10 @@ app.post('/twiml', (req, res) => {
 app.post('/status', (req, res) => {
   const { CallSid, CallStatus, From, To } = req.body;
 
-  console.log('📟 Call Status Event Received');
-  console.log(`➡️ Call SID: ${CallSid}`);
-  console.log(`➡️ From: ${From}, To: ${To}`);
-  console.log(`➡️ Status: ${CallStatus}`);
+  console.log('Call Status Event Received');
+  console.log(`Call SID: ${CallSid}`);
+  console.log(`From: ${From}, To: ${To}`);
+  console.log(`status: ${CallStatus}`);
 
   frontendSockets.forEach(sock => {
     if (sock.readyState === WebSocket.OPEN) {
@@ -105,30 +105,21 @@ app.post('/status', (req, res) => {
 });
 
 // WebSocket upgrade routing with WeakSet tracking
-const upgradedSocketRefs = new WeakSet();
-
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url;
 
   if (pathname === '/twilio') {
-    if (upgradedSocketRefs.has(socket)) {
-      console.warn(`⚠️ Duplicate upgrade attempt — closing socket`);
-      socket.destroy();
-      return;
-    }
-
-    upgradedSocketRefs.add(socket);
-    console.log(`🔄 WebSocket upgrade for /twilio`);
-
+    console.log(` WebSocket upgrade for /twilio`);
     twilioWss.handleUpgrade(req, socket, head, (ws) => {
       twilioWss.emit('connection', ws, req);
     });
   }
 });
 
+
 // Twilio <Stream> handler
 twilioWss.on('connection', (twilioSocket) => {
-  console.log('📞 Twilio connected');
+  console.log('Twilio connected');
 
   const uv = new WebSocket('wss://api.ultravox.ai/realtime', {
     headers: {
@@ -137,37 +128,37 @@ twilioWss.on('connection', (twilioSocket) => {
   });
 
   uv.on('open', () => {
-    console.log('🔗 Ultravox WebSocket opened');
+    console.log(' Ultravox WebSocket opened');
 
     twilioSocket.on('message', (msg) => {
-      console.log('[🎧 Incoming Twilio Msg]', msg);
+      console.log('[ Incoming Twilio Msg]', msg);
       try {
         const json = JSON.parse(msg);
         if (json.event === 'media') {
           const audio = Buffer.from(json.media.payload, 'base64');
           uv.send(audio);
-          console.log('🔊 Sent audio to Ultravox');
+          console.log(' Sent audio to Ultravox');
         }
       } catch (err) {
-        console.error('❌ Error parsing Twilio msg:', err);
+        console.error(' Error parsing Twilio msg:', err);
       }
     });
 
     uv.on('message', (data) => {
-      console.log('[🧠 Ultravox Msg]', data);
+      console.log('[Ultravox Msg]', data);
       try {
         const parsed = JSON.parse(data);
         if (parsed.type === 'transcript' && parsed.transcript?.text) {
-          console.log('📝 Transcript:', parsed.transcript.text);
+          console.log(' Transcript:', parsed.transcript.text);
           frontendSockets.forEach(sock => {
             if (sock.readyState === WebSocket.OPEN) {
               sock.send(JSON.stringify({ type: 'transcript', text: parsed.transcript.text }));
-              console.log('📤 Sent transcript to frontend');
+              console.log(' Sent transcript to frontend');
             }
           });
         }
       } catch (err) {
-        console.error('❌ Error parsing Ultravox msg:', err);
+        console.error('Error parsing Ultravox msg:', err);
       }
     });
   });
