@@ -19,7 +19,6 @@ const app = express();
 const server = http.createServer(app);
 
 const wss = new WebSocketServer({ noServer: true });
-const twilioWss = new WebSocketServer({ noServer: true });
 
 app.use(cors());
 app.use(express.json());
@@ -42,7 +41,7 @@ wss.on('connection', (socket) => {
 
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
 
-// === 🔧 Ultravox API Call ===
+// === 🔧 Create Ultravox Call
 async function createUltravoxCall(systemPrompt) {
   return new Promise((resolve, reject) => {
     const config = {
@@ -59,7 +58,7 @@ async function createUltravoxCall(systemPrompt) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.ULTRAVOX_TOKEN
+        'X-API-Key': process.env.ULTRAVOX_API_KEY
       }
     });
 
@@ -83,44 +82,48 @@ async function createUltravoxCall(systemPrompt) {
   });
 }
 
-// === 🔌 Connect to joinUrl WebSocket ===
+// === 🌐 Connect to joinUrl WebSocket
 function connectToUltravoxStream(joinUrl) {
-  const ws = new WebSocket(joinUrl);
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(joinUrl);
 
-  ws.on('open', () => {
-    console.log('📡 Connected to Ultravox joinUrl stream');
-  });
+    ws.on('open', () => {
+      console.log('📡 Connected to Ultravox joinUrl stream');
+      resolve(ws);
+    });
 
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data);
-      if (msg.type === 'transcription' && msg.text) {
-        console.log(`📝 ${msg.speaker || 'User'}: ${msg.text}`);
-        frontendSockets.forEach(sock => {
-          if (sock.readyState === sock.OPEN) {
-            sock.send(JSON.stringify({
-              type: 'transcript',
-              speaker: msg.speaker || 'user',
-              text: msg.text
-            }));
-          }
-        });
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'transcription' && msg.text) {
+          console.log(`📝 ${msg.speaker || 'User'}: ${msg.text}`);
+          frontendSockets.forEach(sock => {
+            if (sock.readyState === sock.OPEN) {
+              sock.send(JSON.stringify({
+                type: 'transcript',
+                speaker: msg.speaker || 'user',
+                text: msg.text
+              }));
+            }
+          });
+        }
+      } catch (err) {
+        console.error('❌ Parse error from Ultravox WebSocket:', err.message);
       }
-    } catch (err) {
-      console.error('❌ Failed to parse Ultravox stream data:', err.message);
-    }
-  });
+    });
 
-  ws.on('error', (err) => {
-    console.error('❌ Ultravox WebSocket error:', err.message);
-  });
+    ws.on('error', (err) => {
+      console.error('❌ Ultravox WebSocket error:', err.message);
+      reject(err);
+    });
 
-  ws.on('close', () => {
-    console.log('🔌 Ultravox WebSocket closed');
+    ws.on('close', () => {
+      console.log('🔌 Ultravox WebSocket closed');
+    });
   });
 }
 
-// === Call Trigger Endpoint ===
+// === 📞 Make a Call
 app.post('/call', async (req, res) => {
   const { to } = req.body;
 
@@ -131,11 +134,10 @@ Keep the tone helpful and concise.
 `;
 
   try {
-    // Create Ultravox session and get joinUrl
     const { joinUrl } = await createUltravoxCall(systemPrompt);
     if (!joinUrl) throw new Error('No joinUrl from Ultravox');
 
-    connectToUltravoxStream(joinUrl); // connect to joinUrl stream immediately
+    await connectToUltravoxStream(joinUrl); // wait for WebSocket ready
 
     const call = await client.calls.create({
       twiml: `<Response><Connect><Stream url="${joinUrl}" /></Connect></Response>`,
@@ -150,12 +152,12 @@ Keep the tone helpful and concise.
     res.json({ success: true, sid: call.sid });
 
   } catch (err) {
-    console.error('❌ Call setup failed:', err.message);
+    console.error('❌ Call error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// === Twilio Status Webhook ===
+// === Twilio Call Status
 app.post('/status', (req, res) => {
   const { CallSid, CallStatus, From, To } = req.body;
   console.log(`📶 Call status: SID=${CallSid}, From=${From}, To=${To}, Status=${CallStatus}`);
@@ -177,7 +179,7 @@ app.post('/status', (req, res) => {
   res.sendStatus(200);
 });
 
-// === WebSocket Upgrade Handling ===
+// === WebSocket Upgrade Handler
 server.on('upgrade', (req, socket, head) => {
   const pathname = req.url;
 
