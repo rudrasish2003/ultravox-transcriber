@@ -10,9 +10,11 @@
       padding: 2rem;
       color: #222;
     }
+
     h2 {
       margin-bottom: 1rem;
     }
+
     #transcript {
       border: 1px solid #ccc;
       padding: 1rem;
@@ -23,11 +25,13 @@
       font-size: 1rem;
       line-height: 1.5;
     }
+
     .status {
       margin-top: 1rem;
       font-size: 0.95rem;
       color: #444;
     }
+
     .controls {
       margin-top: 1rem;
       display: flex;
@@ -35,6 +39,7 @@
       gap: 1rem;
       align-items: center;
     }
+
     .controls button {
       padding: 0.5rem 1rem;
       background-color: #007bff;
@@ -44,15 +49,35 @@
       cursor: pointer;
       font-size: 0.9rem;
     }
+
     .controls button:hover {
       background-color: #0056b3;
     }
+
     input[type="tel"] {
       padding: 0.5rem;
       font-size: 1rem;
       border: 1px solid #aaa;
       border-radius: 4px;
-      width: 200px;
+      width: 220px;
+    }
+
+    .transcript-line {
+      margin-bottom: 0.5rem;
+    }
+
+    .transcript-human {
+      color: #000;
+    }
+
+    .transcript-agent {
+      color: #007bff;
+    }
+
+    .timestamp {
+      font-size: 0.8rem;
+      color: #888;
+      margin-left: 0.5rem;
     }
   </style>
 </head>
@@ -63,10 +88,10 @@
   <div class="controls">
     <input type="tel" id="phoneNumber" placeholder="+91XXXXXXXXXX" />
     <button onclick="makeCall()">📲 Call</button>
-    <button onclick="clearTranscript()">🧹 Clear Transcript</button>
+    <button onclick="clearTranscript()">🧹 Clear</button>
   </div>
 
-  <div id="transcript">Waiting for audio...</div>
+  <div id="transcript">🕐 Waiting for transcription...</div>
   <div class="status" id="status">🔌 Connecting to WebSocket...</div>
 
   <script>
@@ -74,13 +99,13 @@
     const statusEl = document.getElementById('status');
 
     function clearTranscript() {
-      transcriptEl.innerText = '';
+      transcriptEl.innerHTML = '🕐 Waiting for transcription...';
     }
 
     function makeCall() {
-      const number = document.getElementById('phoneNumber').value;
+      const number = document.getElementById('phoneNumber').value.trim();
       if (!number.startsWith('+')) {
-        alert('Please enter a valid E.164 formatted number (e.g., +918XXXXXXXXX)');
+        alert('Please enter a valid E.164 phone number (e.g., +918XXXXXXXXX)');
         return;
       }
 
@@ -92,7 +117,7 @@
         .then(res => res.json())
         .then(data => {
           if (data.success) {
-            statusEl.innerText = `📞 Call initiated: ${data.sid}`;
+            statusEl.innerText = `📞 Call initiated (SID: ${data.sid})`;
           } else {
             statusEl.innerText = `❌ Call failed: ${data.error}`;
           }
@@ -106,7 +131,7 @@
     const ws = new WebSocket(`wss://${location.host}/frontend`);
 
     ws.onopen = () => {
-      statusEl.innerText = '✅ Connected to WebSocket';
+      statusEl.innerText = '✅ WebSocket connected';
     };
 
     ws.onerror = (err) => {
@@ -120,18 +145,31 @@
 
     ws.onmessage = ({ data }) => {
       try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === 'transcript' && parsed.text) {
-          if (transcriptEl.innerText === 'Waiting for audio...') {
-            transcriptEl.innerText = '';
+        const msg = JSON.parse(data);
+
+        if (msg.type === 'transcript' && msg.text) {
+          if (transcriptEl.innerText.includes('Waiting for transcription')) {
+            transcriptEl.innerHTML = '';
           }
-          transcriptEl.innerText += ' ' + parsed.text;
+
+          const p = document.createElement('div');
+          p.classList.add('transcript-line');
+
+          // Optional: if future messages contain `speaker: 'human'` or `agent`
+          const speaker = msg.speaker || 'User'; // fallback
+
+          p.classList.add(speaker === 'agent' ? 'transcript-agent' : 'transcript-human');
+          p.textContent = `🗣️ ${speaker}: ${msg.text}`;
+          transcriptEl.appendChild(p);
           transcriptEl.scrollTop = transcriptEl.scrollHeight;
-        } else if (parsed.type === 'status') {
-          statusEl.innerText = `📞 Call status: ${parsed.status}`;
         }
+
+        else if (msg.type === 'status') {
+          statusEl.innerText = `📶 Call status: ${msg.status}`;
+        }
+
       } catch (err) {
-        console.error('Invalid message received:', data);
+        console.error('Invalid WebSocket message:', data);
       }
     };
   </script>
