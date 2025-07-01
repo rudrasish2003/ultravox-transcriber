@@ -59,7 +59,7 @@ async function createUltravoxCall(systemPrompt) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.ULTRAVOX_API_KEY
+        'X-API-Key': process.env.ULTRAVOX_TOKEN
       }
     });
 
