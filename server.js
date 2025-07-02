@@ -27,67 +27,73 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let frontendSockets = [];
 
+const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
+
+// === ROUTES ===
+
 app.get('/', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// === WebSocket Handling ===
-frontendWss.on('connection', (socket) => {
-  console.log('✅ Frontend WebSocket connected');
-  frontendSockets.push(socket);
-  socket.on('close', () => {
-    frontendSockets = frontendSockets.filter(s => s !== socket);
-  });
-});
-
-// === Twilio & Ultravox Call Handler ===
-const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
-
 app.post('/call', async (req, res) => {
-  const { to } = req.body;
-
-  const payload = {
-    systemPrompt: `
-You are a helpful recruiter bot calling a candidate. Greet the candidate politely.
-Ask about their availability, past driving experience, and interest in the role.
-If the candidate asks for a human, say you'll escalate and end the call.
-`,
-    model: 'fixie-ai/ultravox',
-    temperature: 0.3,
-    firstSpeaker: 'FIRST_SPEAKER_AGENT',
-    voice: 'Mark',
-    medium: {
-      twilio: {} // ✅ must be empty
-    }
-  };
-
   try {
-    const ultravoxResponse = await createUltravoxCall(payload);
-    const { joinUrl, id: callId } = ultravoxResponse;
+    const { to } = req.body;
 
-    // Create Twilio call
+    const systemPrompt = `
+You are RecruitAI, a professional, polite, and intelligent recruiter assistant from FedEx. You are screening candidates for the Non CDL/L20 position.
+
+If the candidate says:
+"I want to talk to a person" or "Transfer me",
+then say:
+“Absolutely, I’ll bring in my manager to assist you. Please stay on the line.”
+Then call the tool "merge_manager".
+`;
+
+    const { joinUrl, id: callId } = await createUltravoxCall(systemPrompt);
+    if (!joinUrl) throw new Error('joinUrl not received from Ultravox');
+
     const call = await client.calls.create({
       twiml: `<Response><Connect><Stream url="${joinUrl}"/></Connect></Response>`,
       to,
       from: process.env.TWILIO_NUMBER,
       statusCallback: `https://${req.headers.host}/status`,
       statusCallbackMethod: 'POST',
-      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed']
+      statusCallbackEvent: ['completed']
     });
 
-    res.json({ success: true, sid: call.sid });
+    console.log('✅ Twilio call initiated:', call.sid);
+    res.json({ success: true, sid: call.sid, callId });
 
-    // Begin polling for transcripts every 10s (3 times)
     pollTranscript(callId, 10000, 3);
-
   } catch (err) {
-    console.error('❌ Call initiation failed:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('❌ Error initiating call:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// === Helper: Ultravox API call ===
-function createUltravoxCall(payload) {
+function createUltravoxCall(systemPrompt) {
+  const payload = {
+    systemPrompt,
+    model: 'fixie-ai/ultravox',
+    temperature: 0.3,
+    firstSpeaker: 'FIRST_SPEAKER_AGENT',
+    voice: 'Mark',
+    medium: {}, // ✅ must be empty
+    selectedTools: [
+      {
+        temporaryTool: {
+          modelToolName: 'merge_manager',
+          description: 'Escalate to a human recruiter.',
+          dynamicParameters: [],
+          http: {
+            baseUrlPattern: process.env.MERGE_SERVER_URL || 'https://merge-server.onrender.com/tool-calls',
+            httpMethod: 'POST'
+          }
+        }
+      }
+    ]
+  };
+
   return new Promise((resolve, reject) => {
     const req = https.request('https://api.ultravox.ai/api/calls', {
       method: 'POST',
@@ -107,10 +113,10 @@ function createUltravoxCall(payload) {
           if (parsed.joinUrl && parsed.id) {
             resolve(parsed);
           } else {
-            reject(new Error(parsed?.error || 'Ultravox did not return required data'));
+            reject(new Error('Ultravox did not return required data'));
           }
         } catch (err) {
-          reject(err);
+          reject(new Error('Failed to parse Ultravox response'));
         }
       });
     });
@@ -121,13 +127,11 @@ function createUltravoxCall(payload) {
   });
 }
 
-// === Helper: Transcript polling ===
-function pollTranscript(callId, interval = 10000, maxRetries = 3) {
+function pollTranscript(callId, interval = 10000, maxTries = 3) {
   let count = 0;
-  const intervalId = setInterval(() => {
+  const poll = setInterval(() => {
     fetchTranscriptAndBroadcast(callId);
-    count++;
-    if (count >= maxRetries) clearInterval(intervalId);
+    if (++count >= maxTries) clearInterval(poll);
   }, interval);
 }
 
@@ -150,7 +154,7 @@ function fetchTranscriptAndBroadcast(callId) {
         const messages = parsed?.messages || [];
 
         messages.forEach(msg => {
-          const transcriptPayload = {
+          const transcript = {
             type: 'transcript',
             speaker: msg.role,
             text: msg.content
@@ -158,12 +162,12 @@ function fetchTranscriptAndBroadcast(callId) {
 
           frontendSockets.forEach(sock => {
             if (sock.readyState === sock.OPEN) {
-              sock.send(JSON.stringify(transcriptPayload));
+              sock.send(JSON.stringify(transcript));
             }
           });
         });
-      } catch (e) {
-        console.error('❌ Failed to parse Ultravox transcript:', e.message);
+      } catch (err) {
+        console.error('❌ Error parsing transcript:', err.message);
       }
     });
   });
@@ -175,43 +179,8 @@ function fetchTranscriptAndBroadcast(callId) {
   req.end();
 }
 
-// === TwiML Test Endpoint ===
-app.post('/twiml', (req, res) => {
-  const VoiceResponse = twilio.twiml.VoiceResponse;
-  const response = new VoiceResponse();
-  const start = response.start();
-  start.stream({ url: `wss://${req.headers.host}/twilio` });
+// === WebSocket Upgrades ===
 
-  response.say('This is a test call. Speak after the beep.');
-  response.pause({ length: 60 });
-
-  res.type('text/xml');
-  res.send(response.toString());
-});
-
-// === Twilio Status Webhook ===
-app.post('/status', (req, res) => {
-  const { CallSid, CallStatus, From, To } = req.body;
-  console.log(`📶 Call Status: SID=${CallSid}, From=${From}, To=${To}, Status=${CallStatus}`);
-
-  const payload = {
-    type: 'status',
-    status: CallStatus,
-    sid: CallSid,
-    from: From,
-    to: To
-  };
-
-  frontendSockets.forEach(sock => {
-    if (sock.readyState === sock.OPEN) {
-      sock.send(JSON.stringify(payload));
-    }
-  });
-
-  res.sendStatus(200);
-});
-
-// === WebSocket Upgrade Handling ===
 server.on('upgrade', (req, socket, head) => {
   if (req.url === '/twilio') {
     console.log('🔌 Upgrading Twilio WebSocket');
@@ -228,24 +197,55 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-// === Optional: Simulated transcript from Twilio WS (you may remove this) ===
+frontendWss.on('connection', (socket) => {
+  console.log('✅ Frontend WebSocket connected');
+  frontendSockets.push(socket);
+  socket.on('close', () => {
+    frontendSockets = frontendSockets.filter(s => s !== socket);
+  });
+});
+
 twilioWss.on('connection', (twilioSocket) => {
-  console.log('🔁 Twilio media WebSocket connected');
-  twilioSocket.on('message', (data) => {
-    const fakeTranscript = {
+  console.log('🔁 Twilio WebSocket connected');
+  twilioSocket.on('message', () => {
+    const placeholder = {
       type: 'transcript',
       speaker: 'agent',
-      text: '🗣️ Receiving audio... (transcript will appear here)'
+      text: '🗣️ Receiving audio...'
     };
     frontendSockets.forEach(sock => {
       if (sock.readyState === sock.OPEN) {
-        sock.send(JSON.stringify(fakeTranscript));
+        sock.send(JSON.stringify(placeholder));
       }
     });
   });
 });
 
+// === Call Status Handler ===
+
+app.post('/status', (req, res) => {
+  const { CallSid, CallStatus, From, To } = req.body;
+  console.log(`📶 Call Status: SID=${CallSid}, Status=${CallStatus}`);
+
+  const status = {
+    type: 'status',
+    sid: CallSid,
+    status: CallStatus,
+    from: From,
+    to: To
+  };
+
+  frontendSockets.forEach(sock => {
+    if (sock.readyState === sock.OPEN) {
+      sock.send(JSON.stringify(status));
+    }
+  });
+
+  res.sendStatus(200);
+});
+
 // === Start Server ===
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
