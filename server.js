@@ -57,43 +57,12 @@ If the candidate asks for a human, say you'll escalate and end the call.
     firstSpeaker: 'FIRST_SPEAKER_AGENT',
     voice: 'Mark',
     medium: {
-      twilio: {
-        to,
-        from: process.env.TWILIO_NUMBER
-      }
+      twilio: {} // ✅ must be empty
     }
   };
 
   try {
-    const ultravoxResponse = await new Promise((resolve, reject) => {
-      const req = https.request('https://api.ultravox.ai/api/calls', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': process.env.ULTRAVOX_TOKEN
-        }
-      });
-
-      let data = '';
-      req.on('response', res => {
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            console.log('📦 Ultravox response:', parsed);
-            if (parsed.joinUrl && parsed.id) resolve(parsed);
-            else reject(new Error('Ultravox did not return required data'));
-          } catch (err) {
-            reject(err);
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.write(JSON.stringify(payload));
-      req.end();
-    });
-
+    const ultravoxResponse = await createUltravoxCall(payload);
     const { joinUrl, id: callId } = ultravoxResponse;
 
     // Create Twilio call
@@ -108,7 +77,7 @@ If the candidate asks for a human, say you'll escalate and end the call.
 
     res.json({ success: true, sid: call.sid });
 
-    // ⏳ Poll transcript 3 times (every 10s)
+    // Begin polling for transcripts every 10s (3 times)
     pollTranscript(callId, 10000, 3);
 
   } catch (err) {
@@ -117,7 +86,51 @@ If the candidate asks for a human, say you'll escalate and end the call.
   }
 });
 
-// === Transcript Fetch Function ===
+// === Helper: Ultravox API call ===
+function createUltravoxCall(payload) {
+  return new Promise((resolve, reject) => {
+    const req = https.request('https://api.ultravox.ai/api/calls', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': process.env.ULTRAVOX_TOKEN
+      }
+    });
+
+    let data = '';
+    req.on('response', res => {
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          console.log('📦 Ultravox response:', parsed);
+          if (parsed.joinUrl && parsed.id) {
+            resolve(parsed);
+          } else {
+            reject(new Error(parsed?.error || 'Ultravox did not return required data'));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(JSON.stringify(payload));
+    req.end();
+  });
+}
+
+// === Helper: Transcript polling ===
+function pollTranscript(callId, interval = 10000, maxRetries = 3) {
+  let count = 0;
+  const intervalId = setInterval(() => {
+    fetchTranscriptAndBroadcast(callId);
+    count++;
+    if (count >= maxRetries) clearInterval(intervalId);
+  }, interval);
+}
+
 function fetchTranscriptAndBroadcast(callId) {
   const options = {
     hostname: 'api.ultravox.ai',
@@ -134,14 +147,12 @@ function fetchTranscriptAndBroadcast(callId) {
     res.on('end', () => {
       try {
         const parsed = JSON.parse(data);
-        console.log('📜 Ultravox transcript:', parsed);
-
         const messages = parsed?.messages || [];
 
         messages.forEach(msg => {
           const transcriptPayload = {
             type: 'transcript',
-            speaker: msg.role, // agent/user
+            speaker: msg.role,
             text: msg.content
           };
 
@@ -151,7 +162,6 @@ function fetchTranscriptAndBroadcast(callId) {
             }
           });
         });
-
       } catch (e) {
         console.error('❌ Failed to parse Ultravox transcript:', e.message);
       }
@@ -165,16 +175,7 @@ function fetchTranscriptAndBroadcast(callId) {
   req.end();
 }
 
-function pollTranscript(callId, interval = 10000, maxRetries = 3) {
-  let count = 0;
-  const intervalId = setInterval(() => {
-    fetchTranscriptAndBroadcast(callId);
-    count++;
-    if (count >= maxRetries) clearInterval(intervalId);
-  }, interval);
-}
-
-// === TwiML Endpoint ===
+// === TwiML Test Endpoint ===
 app.post('/twiml', (req, res) => {
   const VoiceResponse = twilio.twiml.VoiceResponse;
   const response = new VoiceResponse();
@@ -210,7 +211,7 @@ app.post('/status', (req, res) => {
   res.sendStatus(200);
 });
 
-// === WebSocket Upgrade ===
+// === WebSocket Upgrade Handling ===
 server.on('upgrade', (req, socket, head) => {
   if (req.url === '/twilio') {
     console.log('🔌 Upgrading Twilio WebSocket');
@@ -227,7 +228,7 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-// === Simulated Transcript Forwarding from Twilio media (can be removed if not needed) ===
+// === Optional: Simulated transcript from Twilio WS (you may remove this) ===
 twilioWss.on('connection', (twilioSocket) => {
   console.log('🔁 Twilio media WebSocket connected');
   twilioSocket.on('message', (data) => {
